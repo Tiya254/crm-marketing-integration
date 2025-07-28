@@ -1,0 +1,155 @@
+version: '3.8'
+
+services:
+  # EspoCRM Service
+  espocrm:
+    image: espocrm/espocrm:latest
+    container_name: espocrm
+    restart: unless-stopped
+    environment:
+      ESPOCRM_DATABASE_HOST: espocrm-db
+      ESPOCRM_DATABASE_NAME: espocrm
+      ESPOCRM_DATABASE_USER: espocrm_user
+      ESPOCRM_DATABASE_PASSWORD: espocrm_password
+      ESPOCRM_ADMIN_USERNAME: admin
+      ESPOCRM_ADMIN_PASSWORD: admin123
+      ESPOCRM_SITE_URL: http://localhost:8080
+    ports:
+      - "8080:80"
+    volumes:
+      - espocrm_data:/var/www/html
+      - ./config/espocrm:/var/www/html/custom
+    depends_on:
+      - espocrm-db
+    networks:
+      - crm-network
+
+  # EspoCRM Database
+  espocrm-db:
+    image: mysql:8.0
+    container_name: espocrm-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: espocrm
+      MYSQL_USER: espocrm_user
+      MYSQL_PASSWORD: espocrm_password
+    volumes:
+      - espocrm_db_data:/var/lib/mysql
+    networks:
+      - crm-network
+
+  # Mautic Service
+  mautic:
+    image: mautic/mautic:latest
+    container_name: mautic
+    restart: unless-stopped
+    environment:
+      MAUTIC_DB_HOST: mautic-db
+      MAUTIC_DB_NAME: mautic
+      MAUTIC_DB_USER: mautic_user
+      MAUTIC_DB_PASSWORD: mautic_password
+      MAUTIC_TRUSTED_PROXIES: 0.0.0.0/0
+    ports:
+      - "8081:80"
+    volumes:
+      - mautic_data:/var/www/html
+      - ./config/mautic:/var/www/html/custom
+    depends_on:
+      - mautic-db
+    networks:
+      - crm-network
+
+  # Mautic Database
+  mautic-db:
+    image: mysql:8.0
+    container_name: mautic-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: mautic
+      MYSQL_USER: mautic_user
+      MYSQL_PASSWORD: mautic_password
+    volumes:
+      - mautic_db_data:/var/lib/mysql
+    networks:
+      - crm-network
+
+  # Integration Backend API
+  integration-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: integration-api
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:5000
+      ESPOCRM_BASE_URL: http://espocrm
+      MAUTIC_BASE_URL: http://mautic
+      CONNECTION_STRING: Server=integration-db;Database=IntegrationDB;User=integration_user;Password=integration_password;
+    ports:
+      - "5000:5000"
+    depends_on:
+      - integration-db
+      - espocrm
+      - mautic
+    networks:
+      - crm-network
+
+  # Integration Database
+  integration-db:
+    image: mysql:8.0
+    container_name: integration-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: IntegrationDB
+      MYSQL_USER: integration_user
+      MYSQL_PASSWORD: integration_password
+    volumes:
+      - integration_db_data:/var/lib/mysql
+    networks:
+      - crm-network
+
+  # Frontend Admin Console
+  admin-console:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: admin-console
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:5000
+      NEXT_PUBLIC_ESPOCRM_URL: http://localhost:8080
+      NEXT_PUBLIC_MAUTIC_URL: http://localhost:8081
+    ports:
+      - "3000:3000"
+    depends_on:
+      - integration-api
+    networks:
+      - crm-network
+
+  # Redis for caching and sessions
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - crm-network
+
+volumes:
+  espocrm_data:
+  espocrm_db_data:
+  mautic_data:
+  mautic_db_data:
+  integration_db_data:
+  redis_data:
+
+networks:
+  crm-network:
+    driver: bridge
